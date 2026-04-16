@@ -20,8 +20,12 @@ import torch.nn.functional as F
 from kernels import get_kernel
 cap = torch.cuda.get_device_capability()
 # varunneal's FA3 is Hopper only, use kernels-community on non-Hopper GPUs
-repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
-fa3 = get_kernel(repo).flash_attn_interface
+USE_FA3 = cap <= (12, 0)
+if USE_FA3:
+    repo = "varunneal/flash-attention-3" if cap == (9, 0) else "kernels-community/flash-attn3"
+    fa3 = get_kernel(repo).flash_attn_interface
+else:
+    fa3 = None
 
 from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
 
@@ -58,6 +62,19 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3)
 
 
+_sdpa_mask_cache = {}
+
+def sdpa_causal_window_mask(seq_len, left_window, device):
+    key = (seq_len, left_window, device)
+    mask = _sdpa_mask_cache.get(key)
+    if mask is None:
+        q_pos = torch.arange(seq_len, device=device)[:, None]
+        k_pos = torch.arange(seq_len, device=device)[None, :]
+        mask = (k_pos <= q_pos) & (k_pos >= q_pos - left_window)
+        _sdpa_mask_cache[key] = mask
+    return mask
+
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -90,7 +107,22 @@ class CausalSelfAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
 
-        y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        if USE_FA3:
+            y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        else:
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
+            if self.n_kv_head != self.n_head:
+                repeat = self.n_head // self.n_kv_head
+                k = k.repeat_interleave(repeat, dim=1)
+                v = v.repeat_interleave(repeat, dim=1)
+            if window_size[0] >= T:
+                y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            else:
+                mask = sdpa_causal_window_mask(T, window_size[0], q.device)
+                y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            y = y.transpose(1, 2)
         y = y.contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
