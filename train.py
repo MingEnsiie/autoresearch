@@ -505,7 +505,10 @@ optimizer = model.setup_optimizer(
     weight_decay=WEIGHT_DECAY,
 )
 
-model = torch.compile(model, dynamic=False)
+if torch.cuda.get_device_capability() <= (12, 0):
+    model = torch.compile(model, dynamic=False)
+else:
+    print("Skipping model torch.compile on CUDA capability > 12.0")
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
