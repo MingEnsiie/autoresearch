@@ -1,92 +1,110 @@
 # autoresearch
 
-![teaser](progress.png)
+![实验进展](progress.png)
 
-*One day, frontier AI research used to be done by meat computers in between eating, sleeping, having other fun, and synchronizing once in a while using sound wave interconnect in the ritual of "group meeting". That era is long gone. Research is now entirely the domain of autonomous swarms of AI agents running across compute cluster megastructures in the skies. The agents claim that we are now in the 10,205th generation of the code base, in any case no one could tell if that's right or wrong as the "code" is now a self-modifying binary that has grown beyond human comprehension. This repo is the story of how it all began. -@karpathy, March 2026*.
+让 AI 智能体在无人值守的情况下自主进行语言模型训练实验。智能体修改代码、训练 10 分钟、检查结果是否提升、保留或丢弃修改，如此循环往复。你醒来时便可看到一份完整的实验记录，以及（希望是）更优的模型。
 
-The idea: give an AI agent a small but real LLM training setup and let it experiment autonomously overnight. It modifies the code, trains for 5 minutes, checks if the result improved, keeps or discards, and repeats. You wake up in the morning to a log of experiments and (hopefully) a better model. The training code here is a simplified single-GPU implementation of [nanochat](https://github.com/karpathy/nanochat). The core idea is that you're not touching any of the Python files like you normally would as a researcher. Instead, you are programming the `program.md` Markdown files that provide context to the AI agents and set up your autonomous research org. The default `program.md` in this repo is intentionally kept as a bare bones baseline, though it's obvious how one would iterate on it over time to find the "research org code" that achieves the fastest research progress, how you'd add more agents to the mix, etc. A bit more context on this project is here in this [tweet](https://x.com/karpathy/status/2029701092347630069) and [this tweet](https://x.com/karpathy/status/2031135152349524125).
+训练代码基于单 GPU 实现，核心思路是：你不直接修改 Python 文件，而是编写 `program.md`——这份 Markdown 文件为 AI 智能体提供上下文、定义研究流程。
 
-## How it works
+## 工作原理
 
-The repo is deliberately kept small and only really has three files that matter:
+仓库有意保持精简，核心文件只有三个：
 
-- **`prepare.py`** — fixed constants, one-time data prep (downloads training data, trains a BPE tokenizer), and runtime utilities (dataloader, evaluation). Not modified.
-- **`train.py`** — the single file the agent edits. Contains the full GPT model, optimizer (Muon + AdamW), and training loop. Everything is fair game: architecture, hyperparameters, optimizer, batch size, etc. **This file is edited and iterated on by the agent**.
-- **`program.md`** — baseline instructions for one agent. Point your agent here and let it go. **This file is edited and iterated on by the human**.
+- **`prepare.py`** — 固定常量、一次性数据准备（下载训练数据、训练 BPE 分词器）及运行时工具（数据加载、评估）。**不可修改。**
+- **`train.py`** — 智能体唯一可编辑的文件。包含完整的 GPT 模型、优化器（Muon + AdamW）和训练循环。架构、超参数、批次大小等均可自由调整。**由智能体迭代修改。**
+- **`program.md`** — 智能体的行为指令。定义实验流程、约束条件和记录规范。**由人类维护和迭代。**
 
-By design, training runs for a **fixed 5-minute time budget** (wall clock, excluding startup/compilation), regardless of the details of your compute. The metric is **val_bpb** (validation bits per byte) — lower is better, and vocab-size-independent so architectural changes are fairly compared.
+训练时间固定为 **10 分钟**（实际训练时钟时间，不含启动和编译）。评估指标为 **val_bpb**（验证集比特每字节），越低越好，且与词表大小无关，可公平比较不同架构。
 
-If you are new to neural networks, this ["Dummy's Guide"](https://x.com/hooeem/status/2030720614752039185) looks pretty good for a lot more context.
+## 快速开始
 
-## Quick start
-
-**Requirements:** A single NVIDIA GPU (tested on H100), Python 3.10+, [uv](https://docs.astral.sh/uv/).
+**环境要求：** 单张 NVIDIA GPU，Python 3.10+，[uv](https://docs.astral.sh/uv/)。
 
 ```bash
-
-# 1. Install uv project manager (if you don't already have it)
+# 1. 安装 uv 包管理器（若尚未安装）
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install dependencies
+# 2. 安装依赖
 uv sync
 
-# 3. Download data and train tokenizer (one-time, ~2 min)
+# 3. 下载数据并训练分词器（一次性，约 2 分钟）
 uv run prepare.py
 
-# 4. Manually run a single training experiment (~5 min)
+# 4. 手动运行一次训练实验（约 10 分钟）
 uv run train.py
 ```
 
-If the above commands all work ok, your setup is working and you can go into autonomous research mode.
+以上命令全部正常运行后，环境即已就绪，可进入自主研究模式。
 
-## Running the agent
+## 运行智能体
 
-Simply spin up your Claude/Codex or whatever you want in this repo (and disable all permissions), then you can prompt something like:
-
-```
-Hi have a look at program.md and let's kick off a new experiment! let's do the setup first.
-```
-
-The `program.md` file is essentially a super lightweight "skill".
-
-## Project structure
+在本仓库目录下启动 Claude Code / Codex 或其他智能体，然后发送如下提示：
 
 ```
-prepare.py      — constants, data prep + runtime utilities (do not modify)
-train.py        — model, optimizer, training loop (agent modifies this)
-program.md      — agent instructions
-pyproject.toml  — dependencies
+请阅读 program.md，我们开始一轮新实验！先完成初始化设置。
 ```
 
-## Design choices
+`program.md` 本质上是一份轻量级"智能体运行规程"。
 
-- **Single file to modify.** The agent only touches `train.py`. This keeps the scope manageable and diffs reviewable.
-- **Fixed time budget.** Training always runs for exactly 5 minutes, regardless of your specific platform. This means you can expect approx 12 experiments/hour and approx 100 experiments while you sleep. There are two upsides of this design decision. First, this makes experiments directly comparable regardless of what the agent changes (model size, batch size, architecture, etc). Second, this means that autoresearch will find the most optimal model for your platform in that time budget. The downside is that your runs (and results) become not comparable to other people running on other compute platforms.
-- **Self-contained.** No external dependencies beyond PyTorch and a few small packages. No distributed training, no complex configs. One GPU, one file, one metric.
+## 项目结构
 
-## Platform support
+```
+prepare.py              — 固定常量、数据准备、分词器、数据加载器、评估（不可修改）
+train.py                — GPT 模型、优化器、训练循环（智能体修改此文件）
+program.md              — 智能体行为指令（人类维护此文件）
+pyproject.toml          — 项目依赖声明
+tests/
+  test_train_config.py  — train.py 配置合法性校验（单 GPU 友好检查）
+analysis.ipynb          — 实验结果可视化分析
+results.tsv             — 实验记录（git 不追踪，由智能体写入）
+run.log                 — 最近一次训练的完整输出日志
+```
 
-This code currently requires that you have a single NVIDIA GPU. In principle it is quite possible to support CPU, MPS and other platforms but this would also bloat the code. I'm not 100% sure that I want to take this on personally right now. People can reference (or have their agents reference) the full/parent nanochat repository that has wider platform support and shows the various solutions (e.g. a Flash Attention 3 kernels fallback implementation, generic device support, autodetection, etc.), feel free to create forks or discussions for other platforms and I'm happy to link to them here in the README in some new notable forks section or etc.
+## 当前模型配置
 
-Seeing as there seems to be a lot of interest in tinkering with autoresearch on much smaller compute platforms than an H100, a few extra words. If you're going to try running autoresearch on smaller computers (Macbooks etc.), I'd recommend one of the forks below. On top of this, here are some recommendations for how to tune the defaults for much smaller models for aspiring forks:
+以下为 `train.py` 中的关键超参数：
 
-1. To get half-decent results I'd use a dataset with a lot less entropy, e.g. this [TinyStories dataset](https://huggingface.co/datasets/karpathy/tinystories-gpt4-clean). These are GPT-4 generated short stories. Because the data is a lot narrower in scope, you will see reasonable results with a lot smaller models (if you try to sample from them after training).
-2. You might experiment with decreasing `vocab_size`, e.g. from 8192 down to 4096, 2048, 1024, or even - simply byte-level tokenizer with 256 possibly bytes after utf-8 encoding.
-3. In `prepare.py`, you'll want to lower `MAX_SEQ_LEN` a lot, depending on the computer even down to 256 etc. As you lower `MAX_SEQ_LEN`, you may want to experiment with increasing `DEVICE_BATCH_SIZE` in `train.py` slightly to compensate. The number of tokens per fwd/bwd pass is the product of these two.
-4. Also in `prepare.py`, you'll want to decrease `EVAL_TOKENS` so that your validation loss is evaluated on a lot less data.
-5. In `train.py`, the primary single knob that controls model complexity is the `DEPTH` (default 8, here). A lot of variables are just functions of this, so e.g. lower it down to e.g. 4.
-6. You'll want to most likely use `WINDOW_PATTERN` of just "L", because "SSSL" uses alternating banded attention pattern that may be very inefficient for you. Try it.
-7. You'll want to lower `TOTAL_BATCH_SIZE` a lot, but keep it powers of 2, e.g. down to `2**14` (~16K) or so even, hard to tell.
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| `DEPTH` | 12 | Transformer 层数 |
+| `ASPECT_RATIO` | 48 | 模型维度 = DEPTH × ASPECT_RATIO（当前 576） |
+| `TOTAL_BATCH_SIZE` | 2¹⁹ ≈ 524K tokens | 每步优化器更新的 token 数 |
+| `MATRIX_LR` | 0.06 | 矩阵参数学习率（Muon 优化器） |
+| `WINDOW_PATTERN` | `SSSL` | 注意力模式：L=全局，S=半上下文滑动窗口 |
+| `WARMDOWN_RATIO` | 0.5 | 学习率衰减占总时间的比例 |
 
-I think these would be the reasonable hyperparameters to play with. Ask your favorite coding agent for help and copy paste them this guide, as well as the full source code.
+## 实验记录摘要
 
-## Notable forks
+| 提交 | val_bpb | 显存(GB) | 状态 | 说明 |
+|------|---------|---------|------|------|
+| e2a49f1 | 1.112932 | 11.4 | 保留 | 基线 |
+| 6877a44 | 1.103275 | 8.8 | 保留 | ASPECT_RATIO=48，模型维度384，33M参数 |
+| f2ed755 | 1.101157 | 8.8 | 保留 | MATRIX_LR=0.05 略有提升 |
+| 4f68a0e | **1.100356** | 8.8 | 保留 | MATRIX_LR=0.06 进一步提升（当前最优） |
 
-- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos) (MacOS)
-- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx) (MacOS)
-- [jsegov/autoresearch-win-rtx](https://github.com/jsegov/autoresearch-win-rtx) (Windows)
-- [andyluo7/autoresearch](https://github.com/andyluo7/autoresearch) (AMD)
+## 设计决策
 
-## License
+- **单文件修改原则。** 智能体只修改 `train.py`，范围可控，diff 可审查。
+- **固定时间预算。** 训练始终运行 10 分钟，与具体计算平台无关。不同实验之间（无论模型大小、批次大小、架构如何变化）均可直接比较；同时也意味着 autoresearch 会在该时间预算内为你的平台找到最优模型。但注意，不同计算平台之间的结果不具可比性。
+- **自洽封闭。** 除 PyTorch 及少量小型包外无外部依赖，不涉及分布式训练和复杂配置。单卡、单文件、单指标。
+
+## 平台支持
+
+当前需要单张 NVIDIA GPU（在 H100 / 24GB 消费级 GPU 上测试）。在显存受限的设备（如 24GB 卡）上，以下调整可降低显存占用：
+
+1. 降低 `DEPTH`（默认 12），例如改为 8 或 6。
+2. 降低 `TOTAL_BATCH_SIZE`，保持为 2 的幂次，例如 `2**17`。
+3. 降低 `DEVICE_BATCH_SIZE`，例如从 32 改为 16。
+4. 在 `prepare.py` 中，可降低 `MAX_SEQ_LEN`（默认 2048）以减少每步显存。
+5. 将 `WINDOW_PATTERN` 改为纯 `"L"`（全局注意力），在较小模型上可能更高效。
+
+如需在 Mac / AMD / Windows 平台运行，可参考以下社区 fork：
+
+- [miolini/autoresearch-macos](https://github.com/miolini/autoresearch-macos)（macOS）
+- [trevin-creator/autoresearch-mlx](https://github.com/trevin-creator/autoresearch-mlx)（macOS MLX）
+- [jsegov/autoresearch-win-rtx](https://github.com/jsegov/autoresearch-win-rtx)（Windows）
+- [andyluo7/autoresearch](https://github.com/andyluo7/autoresearch)（AMD）
+
+## 许可证
 
 MIT
