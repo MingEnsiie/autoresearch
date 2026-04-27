@@ -63,6 +63,19 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3)
 
 
+_sdpa_mask_cache = {}
+
+def sdpa_causal_window_mask(seq_len, left_window, device):
+    key = (seq_len, left_window, device)
+    mask = _sdpa_mask_cache.get(key)
+    if mask is None:
+        q_pos = torch.arange(seq_len, device=device)[:, None]
+        k_pos = torch.arange(seq_len, device=device)[None, :]
+        mask = (k_pos <= q_pos) & (k_pos >= q_pos - left_window)
+        _sdpa_mask_cache[key] = mask
+    return mask
+
+
 class CausalSelfAttention(nn.Module):
     def __init__(self, config, layer_idx):
         super().__init__()
@@ -99,7 +112,22 @@ class CausalSelfAttention(nn.Module):
         q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
         q, k = norm(q), norm(k)
 
-        y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        if USE_FA3:
+            y = fa3.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+        else:
+            q = q.transpose(1, 2)
+            k = k.transpose(1, 2)
+            v = v.transpose(1, 2)
+            if self.n_kv_head != self.n_head:
+                repeat = self.n_head // self.n_kv_head
+                k = k.repeat_interleave(repeat, dim=1)
+                v = v.repeat_interleave(repeat, dim=1)
+            if window_size[0] >= T:
+                y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+            else:
+                mask = sdpa_causal_window_mask(T, window_size[0], q.device)
+                y = F.scaled_dot_product_attention(q, k, v, attn_mask=mask)
+            y = y.transpose(1, 2)
         y = y.contiguous().view(B, T, -1)
         y = self.c_proj(y)
         return y
@@ -635,7 +663,10 @@ optimizer = model.setup_optimizer(
     weight_decay=WEIGHT_DECAY,
 )
 
-model = torch.compile(model, dynamic=False)
+if USE_COMPILE:
+    model = torch.compile(model, dynamic=False)
+else:
+    print("Skipping torch.compile on CUDA capability > 12.0")
 
 train_loader = make_dataloader(tokenizer, DEVICE_BATCH_SIZE, MAX_SEQ_LEN, "train")
 x, y, epoch = next(train_loader)  # prefetch first batch
