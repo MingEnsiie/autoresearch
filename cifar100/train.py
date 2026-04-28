@@ -24,7 +24,7 @@ from prepare import evaluate_top1, make_train_loader
 # ---------------------------------------------------------------------------
 
 # Model
-BACKBONE = "resnet50d"  # timm model name
+BACKBONE = "resnext50_32x4d"  # timm model name
 PRETRAINED = True  # use ImageNet pretrained weights
 
 # Training
