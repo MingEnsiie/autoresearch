@@ -35,10 +35,10 @@ BATCH_SIZE = 128  # restored with gradient checkpointing to save VRAM
 LR = 3e-3  # head learning rate (AdamW) - higher for faster head convergence
 BACKBONE_LR = 5e-5  # backbone learning rate - lower to preserve IN-12k features
 WEIGHT_DECAY = 1e-3  # weight decay (10x higher regularization)
-LABEL_SMOOTHING = 0.1  # label smoothing for cross-entropy
+LABEL_SMOOTHING = 0.05  # label smoothing (reduced from 0.1)
 
 # LR schedule (cosine with warmup)
-WARMUP_RATIO = 0.05  # fraction of time budget for LR warmup
+WARMUP_RATIO = 0.10  # longer warmup (was 0.05)
 
 # ---------------------------------------------------------------------------
 # Setup
