@@ -24,12 +24,14 @@ from prepare import evaluate_top1, make_train_loader
 # ---------------------------------------------------------------------------
 
 # Model
-BACKBONE = "resnet101d"  # timm model name
+BACKBONE = (
+    "seresnextaa101d_32x8d.sw_in12k_ft_in1k"  # IN-12k pretrained, then IN-1k finetuned
+)
 PRETRAINED = True  # use ImageNet pretrained weights
 
 # Training
 IMAGE_SIZE = 224  # training crop size
-BATCH_SIZE = 128  # per-GPU batch size
+BATCH_SIZE = 64  # reduced to fit 12GB VRAM (model is 91.7M params)
 LR = 1e-3  # head learning rate (AdamW)
 BACKBONE_LR = 1e-4  # backbone learning rate (differential LR)
 WEIGHT_DECAY = 1e-4  # weight decay
