@@ -27,3 +27,12 @@ dev/
 # Results file
 results.tsv
 run.log
+autoGPT/results.tsv
+autoGPT/run.log
+**/results.tsv
+**/auto_results.tsv
+**/run.log
+**/run_final.log
+**/auto_tune.log
+**/master.log
+**/best_model.pt
