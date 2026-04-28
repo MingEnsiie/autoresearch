@@ -10,6 +10,7 @@ os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
 import math
 import time
+from pathlib import Path
 
 import timm
 import torch
@@ -174,6 +175,11 @@ print()  # newline after \r log
 val_top1 = evaluate_top1(model, device)
 t_end = time.time()
 peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+
+# Save model
+save_path = Path(__file__).parent / "best_model.pt"
+torch.save(model, save_path)
+print(f"Model saved to {save_path}")
 
 print("---")
 print(f"val_top1:         {val_top1:.6f}")
