@@ -30,7 +30,8 @@ PRETRAINED = True  # use ImageNet pretrained weights
 # Training
 IMAGE_SIZE = 224  # training crop size
 BATCH_SIZE = 128  # per-GPU batch size
-LR = 1e-3  # base learning rate (AdamW)
+LR = 1e-3  # head learning rate (AdamW)
+BACKBONE_LR = 1e-4  # backbone learning rate (differential LR)
 WEIGHT_DECAY = 1e-4  # weight decay
 LABEL_SMOOTHING = 0.1  # label smoothing for cross-entropy
 
@@ -72,9 +73,26 @@ num_params = sum(p.numel() for p in model.parameters()) / 1e6
 print(f"Backbone: {BACKBONE} (pretrained={PRETRAINED}), params: {num_params:.1f}M")
 print(f"Time budget: {TIME_BUDGET}s | batch_size: {BATCH_SIZE} | lr: {LR}")
 
-# Optimizer + loss
-optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+# Optimizer + loss: differential LR (head 10x higher than backbone)
+# Access pre-compile model params through model._orig_mod if compiled, else model
+_model_ref = model
+head_params = (
+    list(_model_ref._orig_mod.fc.parameters())
+    if hasattr(_model_ref, "_orig_mod")
+    else list(_model_ref.fc.parameters())
+)
+head_param_ids = {id(p) for p in head_params}
+backbone_params = [p for p in _model_ref.parameters() if id(p) not in head_param_ids]
+optimizer = torch.optim.AdamW(
+    [
+        {"params": backbone_params, "lr": BACKBONE_LR},
+        {"params": head_params, "lr": LR},
+    ],
+    weight_decay=WEIGHT_DECAY,
+)
 criterion = nn.CrossEntropyLoss(label_smoothing=LABEL_SMOOTHING)
+for group in optimizer.param_groups:
+    group["initial_lr"] = group["lr"]
 
 # ---------------------------------------------------------------------------
 # LR schedule: linear warmup + cosine decay
@@ -113,7 +131,7 @@ while True:
     progress = min(total_training_time / TIME_BUDGET, 1.0)
     lrm = get_lr_multiplier(progress)
     for group in optimizer.param_groups:
-        group["lr"] = LR * lrm
+        group["lr"] = group["initial_lr"] * lrm
 
     optimizer.zero_grad(set_to_none=True)
     with autocast_ctx:
