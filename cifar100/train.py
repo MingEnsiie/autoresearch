@@ -31,7 +31,7 @@ PRETRAINED = True  # use ImageNet pretrained weights
 
 # Training
 IMAGE_SIZE = 224  # training crop size
-BATCH_SIZE = 64  # reduced to fit 12GB VRAM (model is 91.7M params)
+BATCH_SIZE = 128  # restored with gradient checkpointing to save VRAM
 LR = 1e-3  # head learning rate (AdamW)
 BACKBONE_LR = 1e-4  # backbone learning rate (differential LR)
 WEIGHT_DECAY = 1e-4  # weight decay
@@ -68,6 +68,7 @@ train_iter = iter(train_loader)
 
 # Model: ImageNet pretrained backbone, replace head for CIFAR-100
 model = timm.create_model(BACKBONE, pretrained=PRETRAINED, num_classes=NUM_CLASSES)
+model.set_grad_checkpointing(True)  # trade compute for memory → enables larger BS
 model = model.to(device)
 model = torch.compile(model, dynamic=False)
 
