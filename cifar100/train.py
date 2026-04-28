@@ -32,8 +32,8 @@ PRETRAINED = True  # use ImageNet pretrained weights
 # Training
 IMAGE_SIZE = 224  # training crop size
 BATCH_SIZE = 128  # restored with gradient checkpointing to save VRAM
-LR = 1e-3  # head learning rate (AdamW)
-BACKBONE_LR = 1e-4  # backbone learning rate (differential LR)
+LR = 3e-3  # head learning rate (AdamW) - higher for faster head convergence
+BACKBONE_LR = 5e-5  # backbone learning rate - lower to preserve IN-12k features
 WEIGHT_DECAY = 1e-4  # weight decay
 LABEL_SMOOTHING = 0.1  # label smoothing for cross-entropy
 
