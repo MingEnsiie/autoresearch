@@ -89,13 +89,20 @@ assert len(STRATEGY_DELTAS) == 20, f"Need 20 strategies, got {len(STRATEGY_DELTA
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-def run_round(round_idx: int, params: dict, hist_file: Path):
+def run_round(
+    round_idx: int, params: dict, delta: dict, best_cfg: dict, hist_file: Path
+):
     """Launch train.py as subprocess; return (val_top1, peak_vram_gb, status, history)."""
     name = STRATEGY_DELTAS[round_idx][0]
-    desc = " ".join(f"{k}={v}" for k, v in params.items())
     print(f"\n{'=' * 62}")
     print(f"Round {round_idx + 1:02d}/20 — {name}")
-    print(f"Config: {desc}")
+    # Show what is inherited vs what is new this round
+    inherited = {k: v for k, v in best_cfg.items() if k not in delta}
+    print(f"  Inherited : {' '.join(f'{k}={v}' for k, v in sorted(inherited.items()))}")
+    if delta:
+        print(f"  Delta     : {' '.join(f'{k}={v}' for k, v in sorted(delta.items()))}")
+    else:
+        print(f"  Delta     : (none — baseline)")
     print(f"{'=' * 62}", flush=True)
 
     env = os.environ.copy()
@@ -149,24 +156,61 @@ def main():
     best_cfg = BASELINE.copy()
     best_acc = 0.0
     results = []
+    resume_from = 0
 
-    with open(RESULTS_FILE, "w") as f:
-        f.write("round\tname\tval_top1\tvram_gb\tkept\tstatus\tdescription\n")
+    # ── Resume: load previously completed rounds ──────────────────────────────
+    if RESULTS_JSON.exists():
+        try:
+            saved = json.loads(RESULTS_JSON.read_text())
+            if saved:
+                results = saved
+                resume_from = len(results)
+                # Reconstruct best_cfg / best_acc from saved history
+                for rec in results:
+                    if rec["kept"]:
+                        best_cfg = rec["config"].copy()
+                        best_acc = rec["val_top1"]
+                print(
+                    f"[RESUME] Loaded {resume_from} completed rounds from results.json"
+                )
+                print(f"[RESUME] best_acc={best_acc:.6f}")
+                kept_so_far = [r["name"] for r in results if r["kept"]]
+                print(f"[RESUME] Kept so far: {' → '.join(kept_so_far) or '(none)'}")
+                print(
+                    f"[RESUME] Continuing from round {resume_from + 1}/20 ...",
+                    flush=True,
+                )
+        except Exception as e:
+            print(f"[RESUME] Could not load results.json: {e} — starting fresh")
+
+    # Write TSV header only if starting fresh
+    if resume_from == 0:
+        with open(RESULTS_FILE, "w") as f:
+            f.write("round\tname\tval_top1\tvram_gb\tkept\tstatus\tdescription\n")
 
     for i, (name, delta) in enumerate(STRATEGY_DELTAS):
+        if i < resume_from:
+            continue  # already done
         candidate = best_cfg.copy()
         candidate.update(delta)
 
         hist_file = HISTORY_DIR / f"exp{i:02d}_{name}.json"
-        val_top1, peak_vram, status, history = run_round(i, candidate, hist_file)
+        val_top1, peak_vram, status, history = run_round(
+            i, candidate, delta, best_cfg, hist_file
+        )
 
         kept = val_top1 > best_acc
         if kept:
             best_cfg = candidate.copy()
             best_acc = val_top1
+            kept_names = [r["name"] for r in results if r["kept"]] + [name]
             print(f"  *** KEPT [{name}]  best → {best_acc:.6f}", flush=True)
+            print(f"  Accumulated kept: {' → '.join(kept_names)}", flush=True)
         else:
+            kept_names = [r["name"] for r in results if r["kept"]]
             print(f"  --- DROP [{name}]  best stays {best_acc:.6f}", flush=True)
+            if kept_names:
+                print(f"  Accumulated kept: {' → '.join(kept_names)}", flush=True)
 
         rec = {
             "exp": i,
